@@ -1,0 +1,41 @@
+# IMAGE is replaced at apply time:
+#   sed "s|IMAGE|$IMAGE|" k8s/deployment.yaml | kubectl apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello
+  labels:
+    app: hello
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hello          # which pods this Deployment owns
+  template:
+    metadata:
+      labels:
+        app: hello        # label stamped on every pod; Service + selector above search for it
+    spec:
+      containers:
+        - name: hello
+          image: IMAGE
+          ports:
+            - containerPort: 8080
+          readinessProbe:   # failing → pod removed from Service endpoints (no traffic)
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 5
+          livenessProbe:    # failing → kubelet restarts the container
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:       # what the scheduler reserves; HPA % is measured against this
+              cpu: 50m
+              memory: 32Mi
+            limits:         # hard ceiling; exceed memory → OOMKilled, exceed CPU → throttled
+              cpu: 200m
+              memory: 64Mi

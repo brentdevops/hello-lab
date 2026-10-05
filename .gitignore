@@ -1,0 +1,9 @@
+# terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+lab.tfvars
+
+# secrets / generated access files
+*.pem
+kubeconfig

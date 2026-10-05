@@ -1,0 +1,93 @@
+name: build-scan-deploy
+
+on:
+  push:
+    branches: [main]
+    paths: [app.py, Dockerfile, .github/workflows/deploy.yml]
+  workflow_dispatch: {}
+
+# id-token: write → lets the job request a GitHub OIDC token, which AWS trades for temp creds
+permissions:
+  id-token: write
+  contents: read
+
+# Repo variables (Settings → Secrets and variables → Actions → Variables),
+# values come from `terraform output`:
+#   AWS_REGION, AWS_ROLE_ARN, ECR_REPO_URL, INSTANCE_ID
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  INSTANCE_ID: ${{ vars.INSTANCE_ID }}
+  # the image tag IS the commit SHA → every deploy is traceable to one commit
+  IMAGE: ${{ vars.ECR_REPO_URL }}:${{ github.sha }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      # ECR tags are immutable, so re-running a job for the same commit would fail on push
+      - name: Skip if this SHA is already in ECR
+        id: exists
+        run: |
+          if aws ecr describe-images --repository-name hello-lab \
+               --image-ids imageTag="$GITHUB_SHA" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "image already pushed, skipping build"
+          fi
+
+      - name: Build
+        if: steps.exists.outputs.skip != 'true'
+        run: docker build --build-arg VERSION="${GITHUB_SHA::7}" -t "$IMAGE" .
+
+      - name: Scan (fail on fixable HIGH/CRITICAL)
+        if: steps.exists.outputs.skip != 'true'
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Push
+        if: steps.exists.outputs.skip != 'true'
+        run: docker push "$IMAGE"
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # No SSH, no open port: SSM runs the command on the node through the SSM agent.
+      - name: Roll out new image via SSM
+        run: |
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "deploy ${GITHUB_SHA::7}" \
+            --parameters "{\"commands\":[
+              \"/usr/local/bin/k3s kubectl set image deployment/hello hello=$IMAGE\",
+              \"/usr/local/bin/k3s kubectl rollout status deployment/hello --timeout=90s\"
+            ]}" \
+            --query Command.CommandId --output text)
+          echo "SSM command: $CMD_ID"
+
+          set +e
+          aws ssm wait command-executed --command-id "$CMD_ID" --instance-id "$INSTANCE_ID"
+          RC=$?
+          set -e
+
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+            --query '[Status, StandardOutputContent, StandardErrorContent]' --output text
+          exit $RC

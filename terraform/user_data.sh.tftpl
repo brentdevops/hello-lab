@@ -1,0 +1,61 @@
+#!/bin/bash
+# Runs once at first boot (cloud-init). Log: /var/log/cloud-init-output.log
+set -euxo pipefail
+
+# ---- 1. ECR pull credentials for k3s ----
+# k3s reads registry auth from /etc/rancher/k3s/registries.yaml.
+# ECR tokens expire after 12h, so a systemd timer refreshes it every 6h.
+cat > /usr/local/bin/ecr-login.sh <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+PASS=$(aws ecr get-login-password --region ${region})
+mkdir -p /etc/rancher/k3s
+cat > /etc/rancher/k3s/registries.yaml <<YAML
+configs:
+  "${registry}":
+    auth:
+      username: AWS
+      password: "$PASS"
+YAML
+chmod 600 /etc/rancher/k3s/registries.yaml
+# k3s only reads registries.yaml at startup; restarting it does not kill running pods
+if systemctl is-active --quiet k3s; then systemctl restart k3s; fi
+SCRIPT
+chmod +x /usr/local/bin/ecr-login.sh
+
+cat > /etc/systemd/system/ecr-login.service <<'UNIT'
+[Unit]
+Description=Refresh ECR credentials for k3s
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ecr-login.sh
+UNIT
+
+cat > /etc/systemd/system/ecr-login.timer <<'UNIT'
+[Unit]
+Description=Refresh ECR credentials every 6h
+[Timer]
+OnBootSec=6h
+OnUnitActiveSec=6h
+[Install]
+WantedBy=timers.target
+UNIT
+
+# retry: the instance role's credentials can take a few seconds to appear after boot
+for i in $(seq 1 10); do /usr/local/bin/ecr-login.sh && break; sleep 10; done
+systemctl daemon-reload
+systemctl enable --now ecr-login.timer
+
+# ---- 2. install k3s ----
+IMDS_TOKEN=$(curl -sX PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-metadata-token-ttl-seconds: 300")
+PUBLIC_IP=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4)
+
+# --tls-san: put the public IP in the API cert so kubectl from your laptop trusts it
+# --disable traefik: not needed (we use a NodePort), saves ~100 MB RAM
+# metrics-server ships with k3s, so HPA works without installing anything
+curl -sfL https://get.k3s.io | \
+  INSTALL_K3S_SKIP_SELINUX_RPM=true \
+  INSTALL_K3S_EXEC="server --tls-san $PUBLIC_IP --write-kubeconfig-mode 644 --disable traefik" \
+  sh -
+
+echo "k3s install finished"
