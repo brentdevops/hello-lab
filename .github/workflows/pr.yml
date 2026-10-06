@@ -1,0 +1,73 @@
+# PR CHECKS: run on every pull request to main. Nothing gets deployed or changed.
+#
+#   terraform → fmt check, validate, plan (read-only role). The plan shows up on the run's summary page.
+#   image     → build + security scan (no push)
+#
+# Repo variables used: AWS_REGION, AWS_PLAN_ROLE_ARN, MY_IP_CIDR
+name: pr-checks
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_VERSION: 1.14.7
+  TF_VAR_my_ip_cidr: ${{ vars.MY_IP_CIDR }}
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }} # read-only role: a PR can look, never change
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Format check
+        run: terraform fmt -check -recursive # fails if code isn't formatted the standard way
+
+      - run: terraform init -input=false
+
+      - name: Validate
+        run: terraform validate # catches typos and broken references before talking to AWS
+
+      # -lock=false: the read-only role can't write the lock file, and a plan changes nothing anyway
+      - name: Plan
+        run: |
+          terraform plan -input=false -lock=false -no-color -out=tfplan
+          {
+            echo "### Terraform plan"
+            echo '```'
+            terraform show -no-color tfplan | tail -n 60
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: docker build --build-arg VERSION=pr -t hello-lab:pr .
+
+      - name: Scan (fail on fixable HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: hello-lab:pr
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"

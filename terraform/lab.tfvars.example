@@ -1,7 +1,6 @@
-# Copy to lab.tfvars (gitignored), fill in, then:
-#   terraform plan  -var-file=lab.tfvars
-#   terraform apply -var-file=lab.tfvars
+# Only needed if you run Terraform from your Mac (the pipeline uses the GitHub variable MY_IP_CIDR).
+# Copy to lab.tfvars (gitignored), then:
+#   terraform plan -var-file=lab.tfvars
 
-my_ip_cidr  = "203.0.113.7/32"    # curl -s https://checkip.amazonaws.com  → add /32
-github_repo = "YOUR_GH_USER/hello-lab"
+my_ip_cidr = "203.0.113.7/32" # curl -s https://checkip.amazonaws.com  → add /32
 # alert_email = "you@example.com"

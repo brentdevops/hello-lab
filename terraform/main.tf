@@ -1,4 +1,5 @@
 # One EC2 node running k3s (single-node Kubernetes), in the default VPC.
+# No SSH: you reach the server through AWS SSM (see scripts/kubeconfig.sh).
 
 # ---------- network ----------
 data "aws_vpc" "default" {
@@ -9,15 +10,6 @@ resource "aws_security_group" "node" {
   name        = "hello-lab-node"
   description = "hello-lab k3s node"
   vpc_id      = data.aws_vpc.default.id
-}
-
-resource "aws_vpc_security_group_ingress_rule" "ssh" {
-  security_group_id = aws_security_group.node.id
-  description       = "SSH from my IP"
-  cidr_ipv4         = var.my_ip_cidr
-  ip_protocol       = "tcp"
-  from_port         = 22
-  to_port           = 22
 }
 
 resource "aws_vpc_security_group_ingress_rule" "k8s_api" {
@@ -45,22 +37,6 @@ resource "aws_vpc_security_group_egress_rule" "all" {
   ip_protocol       = "-1"
 }
 
-# ---------- SSH key (generated; private key written next to this file) ----------
-resource "tls_private_key" "ssh" {
-  algorithm = "ED25519"
-}
-
-resource "aws_key_pair" "node" {
-  key_name   = "hello-lab"
-  public_key = tls_private_key.ssh.public_key_openssh
-}
-
-resource "local_sensitive_file" "ssh_key" {
-  filename        = "${path.module}/hello-lab.pem"
-  content         = tls_private_key.ssh.private_key_openssh
-  file_permission = "0400"
-}
-
 # ---------- the node ----------
 data "aws_ssm_parameter" "al2023" {
   name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
@@ -73,7 +49,6 @@ locals {
 resource "aws_instance" "node" {
   ami                    = data.aws_ssm_parameter.al2023.value
   instance_type          = var.instance_type
-  key_name               = aws_key_pair.node.key_name
   vpc_security_group_ids = [aws_security_group.node.id]
   iam_instance_profile   = aws_iam_instance_profile.node.name
 

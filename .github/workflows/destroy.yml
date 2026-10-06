@@ -1,0 +1,45 @@
+# DESTROY: the cost guard. Manual only.
+# Actions → destroy → Run workflow → type "destroy" → Run.
+# Deletes the server, ECR (and its images), firewall, alarms. Bootstrap (bucket + GitHub roles) stays.
+name: destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "destroy" to confirm'
+        required: true
+
+concurrency:
+  group: deploy # never run at the same time as a deploy
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_VAR_my_ip_cidr: ${{ vars.MY_IP_CIDR }}
+
+jobs:
+  destroy:
+    if: inputs.confirm == 'destroy' # typo → job skipped, nothing deleted
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.14.7
+          terraform_wrapper: false
+
+      - run: terraform init -input=false
+      - run: terraform destroy -auto-approve -input=false
