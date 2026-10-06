@@ -65,7 +65,7 @@ jobs:
         run: docker build --build-arg VERSION=pr -t hello-lab:pr .
 
       - name: Scan (fail on fixable HIGH/CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: hello-lab:pr
           severity: CRITICAL,HIGH

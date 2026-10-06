@@ -29,6 +29,14 @@ variable "github_repo" {
   default     = "brentdevops/hello-lab"
 }
 
+# GitHub's OIDC badge ("sub") now carries permanent IDs: owner@<id>/repo@<id>.
+# Names can be reused by someone else after a delete; IDs never are.
+# Found via CloudTrail: repo:brentdevops@224695436/hello-lab@1406194643:pull_request
+variable "github_repo_with_ids" {
+  type    = string
+  default = "brentdevops@224695436/hello-lab@1406194643"
+}
+
 provider "aws" {
   region = var.region
   default_tags {
@@ -72,8 +80,8 @@ resource "aws_iam_openid_connect_provider" "github" {
 }
 
 # Who may assume a role = the "sub" (subject) claim in GitHub's token.
-#   push/manual run on main → repo:OWNER/REPO:ref:refs/heads/main
-#   pull request            → repo:OWNER/REPO:pull_request
+#   push/manual run on main → repo:OWNER@ID/REPO@ID:ref:refs/heads/main
+#   pull request            → repo:OWNER@ID/REPO@ID:pull_request
 locals {
   oidc_aud = { "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com" }
 }
@@ -89,7 +97,11 @@ resource "aws_iam_role" "plan" {
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = merge(local.oidc_aud, {
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:pull_request"
+          # a list = "any of these". Accept the ID format GitHub sends now, and the old names-only one.
+          "token.actions.githubusercontent.com:sub" = [
+            "repo:${var.github_repo_with_ids}:pull_request",
+            "repo:${var.github_repo}:pull_request",
+          ]
         })
       }
     }]
@@ -112,7 +124,10 @@ resource "aws_iam_role" "deploy" {
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = merge(local.oidc_aud, {
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub" = [
+            "repo:${var.github_repo_with_ids}:ref:refs/heads/main",
+            "repo:${var.github_repo}:ref:refs/heads/main",
+          ]
         })
       }
     }]
