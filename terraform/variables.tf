@@ -4,18 +4,13 @@ variable "region" {
 }
 
 variable "my_ip_cidr" {
-  description = "Your public IP as a /32, e.g. 203.0.113.7/32. Only this IP can reach SSH, the k8s API, and the app."
+  description = "Your public IP as a /32. Only this IP can reach the k8s API and the app. In CI it comes from the GitHub variable MY_IP_CIDR."
   type        = string
 
   validation {
     condition     = can(cidrhost(var.my_ip_cidr, 0)) && endswith(var.my_ip_cidr, "/32")
     error_message = "my_ip_cidr must be a single IP in CIDR form, ending in /32."
   }
-}
-
-variable "github_repo" {
-  description = "owner/name of the GitHub repo allowed to deploy, e.g. brent/hello-lab"
-  type        = string
 }
 
 variable "instance_type" {
