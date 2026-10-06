@@ -9,7 +9,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/health":
             body, code = b"ok\n", 200
         elif self.path == "/":
-            body, code = f"hello again from {VERSION}\n".encode(), 200
+            body, code = f"hello from brents pipeline, {VERSION}\n".encode(), 200
         else:
             body, code = b"not found\n", 404
         self.send_response(code)

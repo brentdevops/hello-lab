@@ -153,7 +153,7 @@ jobs:
               "for i in $(seq 1 60); do $K kubectl get nodes 2>/dev/null | grep -q \" Ready\" && break; echo waiting for k3s; sleep 5; done",
               ("echo " + $b64 + " | base64 -d | $K kubectl apply -f -"),
               "$K kubectl rollout status deployment/hello --timeout=180s",
-              "echo SMOKE TEST:; curl -fsS --retry 5 --retry-delay 2 http://$($K kubectl get svc hello -o jsonpath={.spec.clusterIP})/"
+              "echo SMOKE TEST:; curl -fsS --retry 10 --retry-delay 3 --retry-connrefused http://$($K kubectl get svc hello -o jsonpath={.spec.clusterIP})/"
             ]}' > params.json
 
           # 3. send them, then poll until they finish
