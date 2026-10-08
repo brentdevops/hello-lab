@@ -22,6 +22,6 @@ terraform {
 provider "aws" {
   region = var.region
   default_tags {
-    tags = { Project = "hello-lab" }
+        tags = { Project = "hello-lab", Owner = "brent", CostCenter = "devops-lab" }
   }
 }
