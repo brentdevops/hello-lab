@@ -4,12 +4,13 @@ variable "region" {
 }
 
 variable "my_ip_cidr" {
-  description = "Your public IP as a /32. Only this IP can reach the k8s API and the app. In CI it comes from the GitHub variable MY_IP_CIDR."
+  description = "Who can reach the k8s API and the app. 0.0.0.0/0 = everyone (lab: hotspot IP changes). In CI it comes from the GitHub variable MY_IP_CIDR."
   type        = string
+  default     = "0.0.0.0/0"
 
   validation {
-    condition     = can(cidrhost(var.my_ip_cidr, 0)) && endswith(var.my_ip_cidr, "/32")
-    error_message = "my_ip_cidr must be a single IP in CIDR form, ending in /32."
+    condition     = can(cidrhost(var.my_ip_cidr, 0))
+    error_message = "my_ip_cidr must be a valid CIDR, e.g. 0.0.0.0/0 or 1.2.3.4/32."
   }
 }
 
