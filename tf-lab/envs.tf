@@ -17,3 +17,9 @@ output "dev_bucket" {
 output "prod_bucket" {
   value = module.app_prod.bucket_name
 }
+
+module "app_staging" {
+  source = "./modules/bucket"
+  name   = "app"
+  env    = "staging"
+}
