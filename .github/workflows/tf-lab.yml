@@ -1,0 +1,114 @@
+# TF-LAB: the Terraform practice stack in tf-lab/. Separate from hello-lab's deploy.
+#   PR touching tf-lab/        -> fmt, validate, plan (read-only role), plan posted as a PR comment
+#   merge to main              -> apply (deploy role)
+#   manual run, type "destroy" -> destroy everything in tf-lab
+name: tf-lab
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ["tf-lab/**", ".github/workflows/tf-lab.yml"]
+  push:
+    branches: [main]
+    paths: ["tf-lab/**", ".github/workflows/tf-lab.yml"]
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "destroy" to delete everything in tf-lab'
+        required: true
+
+concurrency:
+  group: tf-lab
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  TF_VERSION: 1.14.7
+
+defaults:
+  run:
+    working-directory: tf-lab
+
+jobs:
+  plan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Format check
+        run: terraform fmt -check -recursive
+
+      - run: terraform init -input=false
+
+      - run: terraform validate
+
+      - name: Plan
+        run: terraform plan -input=false -lock=false -no-color -out=tfplan
+
+      - name: Post the plan as a PR comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### tf-lab plan"
+            echo '```'
+            terraform show -no-color tfplan | tail -n 80
+            echo '```'
+          } > plan.md
+          cat plan.md >> "$GITHUB_STEP_SUMMARY"
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file plan.md
+
+  apply:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - run: terraform init -input=false
+
+      - run: terraform apply -auto-approve -input=false
+
+  destroy:
+    if: github.event_name == 'workflow_dispatch' && inputs.confirm == 'destroy'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - run: terraform init -input=false
+
+      - run: terraform destroy -auto-approve -input=false

@@ -9,6 +9,7 @@ name: pr-checks
 on:
   pull_request:
     branches: [main]
+    paths-ignore: ["tf-lab/**"]
 
 permissions:
   id-token: write
