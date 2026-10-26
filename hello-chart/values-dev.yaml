@@ -1,0 +1,9 @@
+replicaCount: 3
+resources:
+  cpu: 100m
+  memory: 64Mi
+service:
+  nodePort: 30081
+image:
+  repository: ghcr.io/brentdevops/hello-lab
+  tag: "not-built-yet"

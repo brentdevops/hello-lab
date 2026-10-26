@@ -9,9 +9,6 @@
 name: deploy
 
 on:
-  push:
-    branches: [main]
-    paths-ignore: ["**.md", "tf-lab/**", ".github/workflows/**"] # editing docs doesn't redeploy
   workflow_dispatch: {} # "Run workflow" button: brings everything up from nothing
 
 # Only one deploy at a time. A second one waits instead of fighting over the same server/state.
