@@ -1,4 +1,3 @@
-import requests
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
