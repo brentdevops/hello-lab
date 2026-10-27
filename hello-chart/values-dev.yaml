@@ -6,4 +6,4 @@ service:
   nodePort: 30081
 image:
   repository: ghcr.io/brentdevops/hello-lab
-  tag: "d9e8e6b"
+  tag: "2613804"
