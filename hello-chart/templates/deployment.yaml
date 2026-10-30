@@ -36,3 +36,6 @@ spec:
             limits:
               cpu: {{ .Values.resources.cpu }}
               memory: {{ .Values.resources.memory }}
+          envFrom:
+            - secretRef:
+                name: hello-db
