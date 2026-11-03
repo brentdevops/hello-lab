@@ -32,6 +32,8 @@ jobs:
       ecr_repo_url: ${{ steps.out.outputs.ecr_repo_url }}
       instance_id: ${{ steps.out.outputs.instance_id }}
       app_url: ${{ steps.out.outputs.app_url }}
+      db_address: ${{ steps.out.outputs.db_address }}
+      db_secret_arn: ${{ steps.out.outputs.db_secret_arn }}
     defaults:
       run:
         working-directory: terraform
@@ -58,6 +60,8 @@ jobs:
             echo "ecr_repo_url=$(terraform output -raw ecr_repo_url)"
             echo "instance_id=$(terraform output -raw instance_id)"
             echo "app_url=$(terraform output -raw app_url)"
+            echo "db_address=$(terraform output -raw db_address)"
+            echo "db_secret_arn=$(terraform output -raw db_secret_arn)"
           } >> "$GITHUB_OUTPUT"
 
   build:
@@ -91,12 +95,9 @@ jobs:
 
       - name: Scan (fail on fixable HIGH/CRITICAL)
         if: steps.exists.outputs.skip != 'true'
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          image-ref: ${{ env.IMAGE }}
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          exit-code: "1"
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.71.2 image --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 "$IMAGE"
 
       - name: Push
         if: steps.exists.outputs.skip != 'true'
@@ -108,6 +109,8 @@ jobs:
     env:
       IMAGE: ${{ needs.infra.outputs.ecr_repo_url }}:${{ github.sha }}
       INSTANCE_ID: ${{ needs.infra.outputs.instance_id }}
+      DB_ADDRESS: ${{ needs.infra.outputs.db_address }}       # OPS-241: where RDS is
+      DB_SECRET_ARN: ${{ needs.infra.outputs.db_secret_arn }} # OPS-241: where its password is
     steps:
       - uses: actions/checkout@v4
 
@@ -136,18 +139,22 @@ jobs:
           set -euo pipefail
 
           # 1. fill the image into the Deployment, bundle it with the Service
-          sed "s|IMAGE|$IMAGE|" k8s/deployment.yaml >  manifests.yaml
+          sed -e "s|IMAGE|$IMAGE|" -e "s|DBHOST|$DB_ADDRESS|" k8s/deployment.yaml > manifests.yaml
           echo "---"                                >> manifests.yaml
           cat k8s/service.yaml                      >> manifests.yaml
           B64=$(base64 -w0 manifests.yaml) # one safe line of text, no quoting problems
 
           # 2. the commands the server will run (as root, via SSM)
-          jq -n --arg b64 "$B64" '{
+          # OPS-241: the SERVER reads the DB password from Secrets Manager (its IAM role allows it)
+          # and stores it as the k8s Secret hello-db. The password never passes through GitHub.
+          jq -n --arg b64 "$B64" --arg secret "$DB_SECRET_ARN" --arg region "$AWS_REGION" '{
             executionTimeout: ["600"],
             commands: [
               "set -e",
               "K=/usr/local/bin/k3s",
               "for i in $(seq 1 60); do $K kubectl get nodes 2>/dev/null | grep -q \" Ready\" && break; echo waiting for k3s; sleep 5; done",
+              ("PW=$(aws secretsmanager get-secret-value --region " + $region + " --secret-id '"'"'" + $secret + "'"'"' --query SecretString --output text | python3 -c '"'"'import json,sys; print(json.load(sys.stdin)[\"password\"])'"'"')"),
+              "$K kubectl create secret generic hello-db --from-literal=DB_PASSWORD=\"$PW\" --dry-run=client -o yaml | $K kubectl apply -f -",
               ("echo " + $b64 + " | base64 -d | $K kubectl apply -f -"),
               "$K kubectl rollout status deployment/hello --timeout=180s",
               "echo SMOKE TEST:; curl -fsS --retry 10 --retry-delay 3 --retry-connrefused http://$($K kubectl get svc hello -o jsonpath={.spec.clusterIP})/"
