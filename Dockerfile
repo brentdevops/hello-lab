@@ -1,5 +1,8 @@
 FROM python:3.12-slim
 
+# OPS-231: the library the app uses to talk to Postgres (installed as root, before switching user)
+RUN pip install --no-cache-dir "psycopg[binary]==3.2.*"
+
 # run as a non-root user
 RUN useradd --uid 10001 --no-create-home app
 USER 10001
