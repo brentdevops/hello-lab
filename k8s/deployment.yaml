@@ -21,6 +21,12 @@ spec:
           image: IMAGE
           ports:
             - containerPort: 8080
+          env:
+            - name: DB_HOST     # OPS-241: the RDS address (filled in at deploy time)
+              value: DBHOST
+          envFrom:
+            - secretRef:
+                name: hello-db  # DB_PASSWORD, created on the server from Secrets Manager
           readinessProbe:   # failing → pod removed from Service endpoints (no traffic)
             httpGet:
               path: /health

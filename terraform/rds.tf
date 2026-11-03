@@ -47,3 +47,17 @@ output "db_address" {
 output "db_secret_arn" {
   value = aws_db_instance.app.master_user_secret[0].secret_arn
 }
+
+# ---------- OPS-241: let the app server read the DB password ----------
+resource "aws_iam_role_policy" "node_db_secret" {
+  name = "hello-lab-read-db-secret"
+  role = aws_iam_role.node.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = "secretsmanager:GetSecretValue"
+      Resource = aws_db_instance.app.master_user_secret[0].secret_arn
+    }]
+  })
+}
