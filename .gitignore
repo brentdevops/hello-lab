@@ -7,3 +7,6 @@ lab.tfvars
 # secrets / generated access files
 *.pem
 kubeconfig
+
+# serverless lab: the zipped Lambda code is built by Terraform
+.build/
