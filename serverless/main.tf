@@ -67,7 +67,7 @@ resource "aws_lambda_function" "upload" {
   environment {
     variables = {
       BUCKET        = aws_s3_bucket.uploads.bucket
-      DELAY_SECONDS = "0"
+      DELAY_SECONDS = "5"
     }
   }
 
