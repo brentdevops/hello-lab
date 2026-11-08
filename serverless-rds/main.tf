@@ -122,18 +122,6 @@ resource "aws_iam_role_policy_attachment" "vpc_and_logs" {
 }
 
 # allow: read the DB password (and only that secret)
-resource "aws_iam_role_policy" "read_db_secret" {
-  name = "read-db-secret"
-  role = aws_iam_role.lambda.id
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = "secretsmanager:GetSecretValue"
-      Resource = aws_db_instance.notes.master_user_secret[0].secret_arn
-    }]
-  })
-}
 
 # ---------- the Lambda (src/handler.py + the Postgres library) ----------
 data "archive_file" "code" {
