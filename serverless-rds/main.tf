@@ -44,6 +44,14 @@ resource "aws_security_group" "db" {
   vpc_id      = data.aws_vpc.default.id
 }
 
+resource "aws_vpc_security_group_ingress_rule" "db_from_lambda" {
+  security_group_id            = aws_security_group.db.id
+  description                  = "postgres from the Lambda"
+  referenced_security_group_id = aws_security_group.lambda.id
+  ip_protocol                  = "tcp"
+  from_port                    = 5432
+  to_port                      = 5432
+}
 
 # ---------- Secrets Manager, reachable from inside the VPC ----------
 # The Lambda has no internet access inside the VPC, so it reaches Secrets Manager through this private door.
